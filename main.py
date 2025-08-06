@@ -5,41 +5,36 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import EmailStr, BaseModel
 from email_validator import validate_email
 from typing import Union, List
-
 from dotenv import load_dotenv
+import os
 
+# Load environment variables from .env (if any)
 load_dotenv()
+
+# FastAPI app configuration
 description_of_fastapi = """
-`` Simple, reliable and Free email validation api. Thanks to https://github.com/JoshData/python-email-validator ``  
+``Simple, reliable and free email validation API. Thanks to https://github.com/JoshData/python-email-validator``
 
-### [📝Test Now ](/validate-email?email=user@example.com)
+### [📝 Test Now](/validate-email?email=user@example.com)
 
-## Features and Advantages
-* Completely free and without any limits
-* Bulk validate emails
-* Check dns settings of email's domain
-* Robust email syntax validation
-* Deliverability validation
-* Good for login forms or other uses related to identifying users
-* Gives friendly error messages when validation fails
-* Supports internationalized domain names
-* Normalizes email addresses
-
-## Deployment 💻 
-You can deploy your own instance of FreeEmailValidationApi using the button below. You will need a [Deta](https://www.deta.sh/) account.      
-> 
-[![Click Here To Deploy Your Own FreeEmailValidationApi 💻️](https://button.deta.dev/1/svg)](https://go.deta.dev/deploy?repo=https://github.com/mehmetcanfarsak/FreeEmailValidationApi)   
-  
-
-**Project Github Page:** [https://github.com/mehmetcanfarsak/FreeEmailValidationApi](https://github.com/mehmetcanfarsak/FreeEmailValidationApi)
-
-  
+## Features
+* Free, no limits
+* Bulk validation (up to 10)
+* Syntax, domain and deliverability checks
+* Friendly error messages
+* Supports international domains
 """
-app = FastAPI(title="📨 Free Email Validation Api", description=description_of_fastapi,
-              contact={"url": "https://github.com/mehmetcanfarsak", "Name": "Mehmet Can Farsak"})
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates("templates")
+app = FastAPI(
+    title="📨 Free Email Validation API",
+    description=description_of_fastapi,
+    contact={"url": "https://github.com/mehmetcanfarsak", "Name": "Mehmet Can Farsak"},
+)
+
+# Static and templates
+if os.path.isdir("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
 class EmailValidationResponseModel(BaseModel):
@@ -59,13 +54,13 @@ class BulkEmailsModel(BaseModel):
     emails: List[EmailStr]
 
 
-@app.get("/", include_in_schema=False, response_class=RedirectResponse)
+@app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse("/docs")
 
 
 @app.get("/show-email-validation-form", include_in_schema=False, response_class=HTMLResponse)
-def show_email_validation_form(request: Request):
+def show_form(request: Request):
     return templates.TemplateResponse("show-email-validation-form.html", {"request": request})
 
 
@@ -73,43 +68,52 @@ def show_email_validation_form(request: Request):
          tags=["Validate Single Email"])
 def validate_single_email(email: EmailStr = Query(example="user@example.com")):
     try:
-        validation_response = validate_email(email)
-        return EmailValidationResponseModel(is_email_valid=True, domain=validation_response.domain,
-                                            original_email=validation_response.original_email,
-                                            local_part=validation_response.local_part,
-                                            ascii_local_part=validation_response.ascii_local_part,
-                                            ascii_domain=validation_response.ascii_domain,
-                                            smtputf8=validation_response.smtputf8,
-                                            mx=validation_response.mx, spf=validation_response.spf,
-                                            ascii_email=validation_response.ascii_email)
-    except:
+        result = validate_email(email)
+        return EmailValidationResponseModel(
+            is_email_valid=True,
+            domain=result.domain,
+            original_email=result.original_email,
+            local_part=result.local_part,
+            ascii_local_part=result.ascii_local_part,
+            ascii_domain=result.ascii_domain,
+            smtputf8=result.smtputf8,
+            mx=result.mx,
+            spf=result.spf,
+            ascii_email=result.ascii_email,
+        )
+    except Exception:
         return EmailValidationResponseModel(is_email_valid=False, original_email=email)
 
 
-@app.post("/bulk-validate-emails", description="Bulk Validate Emails. Max 10 emails can be validated.",
+@app.post("/bulk-validate-emails", description="Bulk Validate Emails (max 10)",
           response_model=List[EmailValidationResponseModel], tags=["Bulk Validate"])
 def bulk_validate_emails(emails: BulkEmailsModel):
-    if (len(emails.emails) > 10):
-        return HTTPException(status_code=status.HTTP_406_NOT_ACCEPTABLE, detail="Max 10 emails can be validated.")
-    response = []
+    if len(emails.emails) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_406_NOT_ACCEPTABLE,
+            detail="Max 10 emails can be validated.",
+        )
+    responses = []
     for email in emails.emails:
         try:
-            validation_response = validate_email(email)
-            response.append(EmailValidationResponseModel(is_email_valid=True, domain=validation_response.domain,
-                                                         original_email=validation_response.original_email,
-                                                         local_part=validation_response.local_part,
-                                                         ascii_local_part=validation_response.ascii_local_part,
-                                                         ascii_domain=validation_response.ascii_domain,
-                                                         smtputf8=validation_response.smtputf8,
-                                                         mx=validation_response.mx, spf=validation_response.spf,
-                                                         ascii_email=validation_response.ascii_email))
-        except:
-            response.append(EmailValidationResponseModel(is_email_valid=False, original_email=email))
-            continue
+            result = validate_email(email)
+            responses.append(EmailValidationResponseModel(
+                is_email_valid=True,
+                domain=result.domain,
+                original_email=result.original_email,
+                local_part=result.local_part,
+                ascii_local_part=result.ascii_local_part,
+                ascii_domain=result.ascii_domain,
+                smtputf8=result.smtputf8,
+                mx=result.mx,
+                spf=result.spf,
+                ascii_email=result.ascii_email,
+            ))
+        except Exception:
+            responses.append(EmailValidationResponseModel(is_email_valid=False, original_email=email))
+    return responses
 
-    return response
 
-
-@app.get('/favicon.ico', include_in_schema=False)
+@app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return FileResponse("static/favicon.ico")
